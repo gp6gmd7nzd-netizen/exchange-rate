@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>💱 환율 정보</title>
+  <script>
+    (function () {
+      var t = "light";
+      try {
+        t = localStorage.getItem("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      } catch (e) {}
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6fb; --card: #ffffff; --text: #1d2433; --muted: #6b7385; --border: #e3e7f0;
+      --primary: #3b6cf6; --up: #e5484d; --down: #3b82f6; --shadow: 0 4px 16px rgba(20, 30, 60, .06);
+    }
+    :root[data-theme="dark"] {
+      --bg: #0f1420; --card: #181f2e; --text: #e8ecf5; --muted: #8b95ab; --border: #283147;
+      --primary: #6c8cff; --up: #ff6b70; --down: #5ea0ff; --shadow: none;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif;
+      transition: background .2s, color .2s;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 0 16px; }
+    .hero { background: linear-gradient(135deg, #3b6cf6, #7c4dff); color: #fff; padding: 28px 0 60px; }
+    .hero-inner { display: flex; justify-content: space-between; align-items: center; }
+    .hero h1 { margin: 0; font-size: 1.7rem; }
+    .sub { margin: 4px 0 0; opacity: .85; font-size: .95rem; }
+    .icon-btn {
+      background: rgba(255, 255, 255, .2); border: none; color: #fff; font-size: 1.3rem;
+      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+    }
+    main.wrap { margin-top: -36px; padding-bottom: 40px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px; box-shadow: var(--shadow); margin-bottom: 18px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 1.1rem; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    input, select, .btn {
+      font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px;
+    }
+    button.btn, a.btn { cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn.primary { background: var(--primary); color: #fff; border-color: transparent; }
+    .muted { color: var(--muted); font-size: .9rem; }
+    .msg { color: var(--up); font-weight: 600; }
+
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .summary .card { margin: 0; cursor: pointer; transition: transform .15s; }
+    .summary .card:hover { transform: translateY(-3px); }
+    .stat-top { display: flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; }
+    .stat-rate { font-size: 1.6rem; font-weight: 800; margin: 8px 0 2px; }
+    .stat-rate small { font-size: .9rem; font-weight: 500; color: var(--muted); margin-left: 4px; }
+
+    .badge {
+      display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px;
+      padding: 0 6px; border-radius: 999px; background: var(--primary); color: #fff;
+      font-size: .7rem; font-weight: 700;
+    }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+
+    .calc-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .calc-result { font-size: 1.6rem; font-weight: 800; margin-top: 14px; }
+
+    .chart-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: .9rem; }
+    .chart-stats b { color: var(--text); }
+
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    #search { flex: 1; min-width: 180px; }
+    .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+    th { color: var(--muted); font-size: .85rem; }
+    th[data-key] { cursor: pointer; user-select: none; }
+    th.asc::after { content: " ▲"; font-size: .7em; }
+    th.desc::after { content: " ▼"; font-size: .7em; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .star { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--border); }
+    .star.on { color: #f5b301; }
+    .empty { text-align: center; color: var(--muted); padding: 24px; }
+    footer { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap hero-inner">
+      <div>
+        <h1>💱 환율 정보</h1>
+        <p class="sub">한국수출입은행 매매기준율</p>
+      </div>
+      <button id="themeBtn" class="icon-btn" title="다크 모드 전환">🌙</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <form id="dateForm" method="get" class="card toolbar">
+      <button type="button" class="btn" id="prevDay">◀</button>
+      <input type="date" name="date" id="dateInput">
+      <button type="button" class="btn" id="nextDay">▶</button>
+      <button class="btn primary">조회</button>
+      <a class="btn" href="/">오늘</a>
+      <span id="baseDate" class="muted"></span>
+    </form>
+    <p id="msg" class="msg" hidden></p>
+
+    <div id="content">
+      <div id="summary" class="summary"></div>
+
+      <section class="card">
+        <h2>🧮 환율 계산기</h2>
+        <div class="calc-row">
+          <select id="calcCur"></select>
+          <select id="calcDir">
+            <option value="toKRW">외화 → 원화</option>
+            <option value="fromKRW">원화 → 외화</option>
+          </select>
+          <button type="button" class="btn" id="swapBtn" title="방향 전환">⇄</button>
+          <input type="number" id="calcAmount" value="1" min="0" step="any">
+        </div>
+        <div class="calc-result" id="calcResult"></div>
+        <div class="muted" id="calcInfo"></div>
+      </section>
+
+      <section class="card" id="chartCard">
+        <h2>📈 환율 변동 그래프</h2>
+        <div class="calc-row">
+          <select id="chartCur"></select>
+          <select id="chartDays">
+            <option value="7">최근 7일</option>
+            <option value="14" selected>최근 14일</option>
+            <option value="30">최근 30일</option>
+          </select>
+          <span id="chartStatus" class="muted"></span>
+        </div>
+        <canvas id="chart"></canvas>
+        <div id="chartStats" class="chart-stats"></div>
+      </section>
+
+      <section class="card">
+        <h2>📋 전체 환율</h2>
+        <div class="filters">
+          <input type="text" id="search" placeholder="통화 검색 (예: USD, 달러, 엔)">
+          <label class="check"><input type="checkbox" id="favOnly"> ⭐ 즐겨찾기만</label>
+        </div>
+        <div class="table-wrap">
+          <table id="rateTable">
+            <thead>
+              <tr>
+                <th></th>
+                <th data-key="unit">통화</th>
+                <th data-key="name">통화명</th>
+                <th data-key="rate" class="num">매매기준율 (원)</th>
+                <th data-key="pct" class="num">전일 대비</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <footer>데이터 출처: 한국수출입은행 · 영업일 오전 11시 이후 제공</footer>
+  </main>
+
+  <script id="app-data" type="application/json">{{ payload|tojson }}</script>
+  <script>
+    const $ = id => document.getElementById(id);
+    const data = JSON.parse($("app-data").textContent);
+    const rows = data.rows;
+
+    let chart, chartToken = 0;
+    let sortKey = "unit", sortDir = 1;
+    let favs = new Set();
+    try { favs = new Set(JSON.parse(localStorage.getItem("favs") || "[]")); } catch (e) {}
+
+    // ---------- 유틸 ----------
+    const fmt = (n, d = 2) => n.toLocaleString("ko-KR", { minimumFractionDigits: d, maximumFractionDigits: d });
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    const SYMBOLS = { USD: "$", EUR: "€", JPY: "¥", CNH: "¥", GBP: "£", AUD: "A$", CAD: "C$", HKD: "HK$", SGD: "S$", NZD: "NZ$", CHF: "Fr", THB: "฿" };
+    const codeOf = unit => unit.split("(")[0];
+    const symOf = unit => SYMBOLS[codeOf(unit)] || codeOf(unit).slice(0, 2);
+    const cls = r => (r.diff > 0 ? "up" : r.diff < 0 ? "down" : "");
+    const chg = r => r.diff === null
+      ? "-"
+      : `${r.diff > 0 ? "▲" : r.diff < 0 ? "▼" : "–"} ${fmt(Math.abs(r.diff))} (${fmt(Math.abs(r.pct))}%)`;
+
+    // ---------- 테마 ----------
+    function applyThemeButton() {
+      $("themeBtn").textContent = document.documentElement.dataset.theme === "dark" ? "☀️" : "🌙";
+    }
+    $("themeBtn").addEventListener("click", () => {
+      const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = t;
+      try { localStorage.setItem("theme", t); } catch (e) {}
+      applyThemeButton();
+      if (chart) loadChart();
+    });
+    applyThemeButton();
+
+    // ---------- 날짜 툴바 ----------
+    $("dateInput").value = data.date || "";
+    $("dateInput").max = data.today;
+    $("baseDate").textContent = data.date ? "기준일 " + data.date : "";
+    if (data.msg) {
+      $("msg").textContent = data.msg;
+      $("msg").hidden = false;
+    }
+    $("content").hidden = rows.length === 0;
+
+    function shiftDate(n) {
+      const base = new Date($("dateInput").value || data.today);
+      base.setUTCDate(base.getUTCDate() + n);
+      const iso = base.toISOString().slice(0, 10);
+      if (iso > data.today) return;
+      $("dateInput").value = iso;
+      $("dateForm").submit();
+    }
+    $("prevDay").addEventListener("click", () => shiftDate(-1));
+    $("nextDay").addEventListener("click", () => shiftDate(1));
+
+    if (rows.length) initContent();
+
+    function initContent() {
+      // 주요 환율 카드
+      $("summary").innerHTML = ["USD", "EUR", "JPY(100)", "CNH"]
+        .map(u => rows.find(r => r.unit === u))
+        .filter(Boolean)
+        .map(r => `
+          <div class="card" data-unit="${esc(r.unit)}">
+            <div class="stat-top"><span class="badge">${esc(symOf(r.unit))}</span><span>${esc(r.unit)}</span></div>
+            <div class="stat-rate">${fmt(r.rate)}<small>원</small></div>
+            <div class="${cls(r)}">${chg(r)}</div>
+          </div>`)
+        .join("");
+      $("summary").addEventListener("click", e => {
+        const c = e.target.closest("[data-unit]");
+        if (!c) return;
+        $("chartCur").value = c.dataset.unit;
+        loadChart();
+        $("chartCard").scrollIntoView({ behavior: "smooth" });
+      });
+
+      // 셀렉트 채우기
+      $("calcCur").innerHTML = rows.map((r, i) => `<option value="${i}">${esc(r.unit)} ${esc(r.name)}</option>`).join("");
+      $("chartCur").innerHTML = rows.map(r => `<option value="${esc(r.unit)}">${esc(r.unit)} ${esc(r.name)}</option>`).join("");
+      const usd = rows.findIndex(r => r.unit === "USD");
+      if (usd >= 0) {
+        $("calcCur").value = String(usd);
+        $("chartCur").value = "USD";
+      }
+
+      // 계산기
+      ["calcCur", "calcDir", "calcAmount"].forEach(id => $(id).addEventListener("input", calc));
+      $("swapBtn").addEventListener("click", () => {
+        $("calcDir").value = $("calcDir").value === "toKRW" ? "fromKRW" : "toKRW";
+        calc();
+      });
+      calc();
+
+      // 그래프
+      $("chartCur").addEventListener("change", loadChart);
+      $("chartDays").addEventListener("change", loadChart);
+      loadChart();
+
+      // 표
+      $("search").addEventListener("input", render);
+      $("favOnly").addEventListener("change", render);
+      document.querySelector("#rateTable thead").addEventListener("click", e => {
+        const th = e.target.closest("th[data-key]");
+        if (!th) return;
+        if (sortKey === th.dataset.key) {
+          sortDir *= -1;
+        } else {
+          sortKey = th.dataset.key;
+          sortDir = 1;
+        }
+        render();
+      });
+      $("tbody").addEventListener("click", e => {
+        const b = e.target.closest(".star");
+        if (!b) return;
+        const u = b.dataset.unit;
+        if (favs.has(u)) favs.delete(u); else favs.add(u);
+        try { localStorage.setItem("favs", JSON.stringify([...favs])); } catch (err) {}
+        render();
+      });
+      render();
+    }
+
+    function calc() {
+      const r = rows[$("calcCur").value];
+      if (!r) return;
+      const amount = parseFloat($("calcAmount").value) || 0;
+      const per = r.unit.includes("(100)") ? r.rate / 100 : r.rate;  // JPY, IDR은 100단위 기준
+      const code = codeOf(r.unit);
+      if ($("calcDir").value === "toKRW") {
+        $("calcResult").textContent = `${fmt(amount * per)} 원`;
+      } else {
+        $("calcResult").textContent = `${fmt(amount / per)} ${code}`;
+      }
+      $("calcInfo").textContent = `1 ${code} = ${fmt(per, per < 100 ? 4 : 2)} 원`;
+    }
+
+    async function loadChart() {
+      const cur = $("chartCur").value;
+      if (!cur) return;
+      if (typeof Chart === "undefined") {
+        $("chartStatus").textContent = "그래프 라이브러리를 불러오지 못했어요.";
+        return;
+      }
+      const my = ++chartToken;
+      $("chartStatus").textContent = "불러오는 중... (처음엔 몇 초 걸려요)";
+      let points = [];
+      try {
+        const res = await fetch(`/api/history?cur=${encodeURIComponent(cur)}&days=${$("chartDays").value}`);
+        points = await res.json();
+      } catch (e) {}
+      if (my !== chartToken) return;  // 더 최신 요청이 있으면 무시
+      $("chartStatus").textContent = points.length ? "" : "표시할 데이터가 없어요.";
+
+      if (chart) chart.destroy();
+      Chart.defaults.color = css("--muted");
+      chart = new Chart($("chart"), {
+        type: "line",
+        data: {
+          labels: points.map(p => p.date.slice(5)),
+          datasets: [{
+            label: `${cur} 매매기준율 (원)`,
+            data: points.map(p => p.rate),
+            borderColor: css("--primary"),
+            backgroundColor: css("--primary") + "22",
+            fill: true,
+            tension: 0.3,
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: css("--border") } },
+            y: { grid: { color: css("--border") } }
+          }
+        }
+      });
+
+      if (points.length) {
+        const v = points.map(p => p.rate);
+        const hi = Math.max(...v), lo = Math.min(...v);
+        const avg = v.reduce((a, b) => a + b, 0) / v.length;
+        const delta = v[v.length - 1] - v[0];
+        const dc = delta > 0 ? "up" : delta < 0 ? "down" : "";
+        $("chartStats").innerHTML =
+          `<span>최고 <b>${fmt(hi)}</b></span><span>최저 <b>${fmt(lo)}</b></span><span>평균 <b>${fmt(avg)}</b></span>` +
+          `<span>기간 변동 <b class="${dc}">${delta > 0 ? "▲" : delta < 0 ? "▼" : "–"} ${fmt(Math.abs(delta))}</b></span>`;
+      } else {
+        $("chartStats").innerHTML = "";
+      }
+    }
+
+    function render() {
+      const q = $("search").value.trim().toLowerCase();
+      let list = rows.filter(r => (r.unit + r.name).toLowerCase().includes(q));
+      if ($("favOnly").checked) list = list.filter(r => favs.has(r.unit));
+
+      list.sort((a, b) => {
+        const fa = favs.has(a.unit), fb = favs.has(b.unit);
+        if (fa !== fb) return fa ? -1 : 1;  // 즐겨찾기 먼저
+        const va = a[sortKey], vb = b[sortKey];
+        const c = typeof va === "string" ? va.localeCompare(vb) : (va ?? 0) - (vb ?? 0);
+        return c * sortDir;
+      });
+
+      document.querySelectorAll("#rateTable th[data-key]").forEach(th => {
+        th.classList.toggle("asc", th.dataset.key === sortKey && sortDir === 1);
+        th.classList.toggle("desc", th.dataset.key === sortKey && sortDir === -1);
+      });
+
+      $("tbody").innerHTML = list.map(r => `
+        <tr>
+          <td><button class="star ${favs.has(r.unit) ? "on" : ""}" data-unit="${esc(r.unit)}" aria-label="즐겨찾기">★</button></td>
+          <td><span class="badge">${esc(symOf(r.unit))}</span> <strong>${esc(r.unit)}</strong></td>
+          <td>${esc(r.name)}</td>
+          <td class="num">${fmt(r.rate)}</td>
+          <td class="num ${cls(r)}">${chg(r)}</td>
+        </tr>`).join("") || `<tr><td colspan="5" class="empty">검색 결과가 없어요.</td></tr>`;
+    }
+  </script>
+</body>
+</html>
